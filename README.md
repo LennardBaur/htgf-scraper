@@ -4,7 +4,7 @@ danke für die Case Study, hat richtig Spaß gemacht, und ich hoffe das Ergebnis
 
 ## TL;DR
 
-Ich hab einen Sourcing-Agent gebaut, der pre-seed / seed Digital-Tech Startups in DACH findet (vorerst, ist jederzeit anpassbar auf die ganze Welt). Drei Datenquellen sind live, vier sind verkabelt aber deaktiviert (mehr dazu unten).
+Ich hab einen Sourcing-Agent gebaut, der pre-seed / seed Digital-Tech Startups hauptsächlich im DACH Raum findet (vorerst, ist jederzeit anpassbar auf die ganze Welt). Drei Datenquellen sind live, vier sind implementiert aber deaktiviert (mehr dazu unten).
 
 **Ergebnis im Repo:** 46 angereicherte Startups, gerankt nach HTGF-Thesis-Fit, plus 46 deutsche One-Pager. Der ganze Pipeline-Lauf hat 3,07 $ gekostet.
 
@@ -12,13 +12,15 @@ Ich hab einen Sourcing-Agent gebaut, der pre-seed / seed Digital-Tech Startups i
 
 ## Wie du das ausprobierst
 
-Du brauchst nur `uv` installiert (quasi wie `pip` und `venv`)
+Meine ge-scrapten Daten findest du an sich hier im repo, da ich die Ergebnisse mit gepusht habe, unter /outputs. Dort gibt es one-pager, oder auch eine excel liste, die automatisch erstellt werden nach jedem scraping. Außerden wird alles gleichzeitig in eine google excel eingepflegt (https://docs.google.com/spreadsheets/d/1y0MakVpNVn2HOBFIQeLZTdttoQSWASid_2y1NdJxQmk/edit?usp=sharing). Ansonsten kannst du den Prozess gerne selber starten mit zwei Arten: 
+
+Du brauchst nur `uv` installiert haben (quasi wie `pip` und `venv`)
 
 ```bash
 brew install uv                                    # Mac
 curl -LsSf https://astral.sh/uv/install.sh | sh    # Linux / WSL
 ```
-Mit Windows kenne ich mich leider nicht extrem gut aus, daher müsste man da schauen.
+Mit Windows kenne ich mich leider nicht extrem gut aus, daher müsste man da schauen. Habe diese Doku gefunden (https://docs.astral.sh/uv/getting-started/installation/)
 
 Den Rest macht das Repo.
 
@@ -90,7 +92,7 @@ Für jeden Lead, der noch nicht angereichert ist (oder älter als 14 Tage):
 - Dafür gibt es eine **Fetch-Kette mit drei Ebenen**: erst **Jina Reader** (kostenlos, liefert sauberes Markdown für ~80% der URLs), dann **Firecrawl** als Fallback (kostet ~$0.005/Seite, aber zuverlässiger bei JS-heavy Sites), dann **Playwright headless** als letzte Bastion (für Cloudflare-geschützte Seiten)
 - Das gesammelte Markdown geht an **Claude Sonnet 4.6** mit einem Pydantic-Schema. Sonnet gibt ein validiertes Objekt zurück mit: Name, One-Liner, Sektor, Stadt + Land, Gründungsjahr, Stage-Signal, Gründer (Name + Rolle + LinkedIn + E-Mail wenn auf der Seite gelistet), Traction-Signale, Funding-Signale
 
-Wichtig zum Datenschutz: Bei E-Mails ist der Prompt strikt — die werden **nur** übernommen wenn sie explizit im Impressum oder auf der Kontaktseite stehen. Nichts wird geraten, nichts aus Namen abgeleitet. Tests prüfen das.
+Wichtig zum Datenschutz: Bei E-Mails ist der Prompt strikt, die werden **nur** übernommen wenn sie explizit im Impressum oder auf der Kontaktseite stehen. Nichts wird geraten, nichts aus Namen abgeleitet. Tests prüfen das.
 
 ### 4. Bewerten gegen HTGF's Thesis
 
@@ -159,9 +161,8 @@ Keine Dependency, die nicht arbeitet.
 ## Wie würde ich weitermachen
 
 - **Daily Cron** über GitHub Actions, Slack-Nachricht ab Score-Schwelle
-- **Per-Programm-Crawler** für EXIST — jedes Förderprogramm hat eine eigene Sub-Seite, da liegt das Gold
-- **Northdata-API** für Handelsregister-Sourcing (kostet, aber findet Stealth-GmbHs mit echten Tech-Purposes)
-- **Proxycurl** für LinkedIn-Anreicherung — würde die `contactability`-Dimension dramatisch besser machen
+- **Per-Programm-Crawler** für EXIST — jedes Förderprogramm hat eine eigene Sub-Seite die mit Link angepasst werden müsste
+- **Northdata-API** für Handelsregister-Sourcing (kostet)
+- **Proxycurl** für LinkedIn-Anreicherung — würde die `contactability`-Dimension besser machen denke ich
 - **Embedding-Dedup** ab dem Punkt, wo > 1000 Startups in der DB sind (Haiku pairwise skaliert nicht ewig)
-- **Claim-Workflow** damit nicht zwei Analysten parallel den gleichen Deal anbahnen
 - **Streamlit-Dashboard** über die gleiche SQLite, für Leute die keine CLI mögen :) 
