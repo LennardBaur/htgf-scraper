@@ -4,7 +4,7 @@ danke für die Case Study, hat richtig Spaß gemacht und ich hoffe das Ergebnis 
 
 ## TL;DR
 
-Ich hab einen Sourcing-Agent gebaut, der pre-seed / seed Digital-Tech Startups hauptsächlich im DACH Raum findet (vorerst, ist jederzeit anpassbar auf die ganze Welt). Drei Datenquellen sind live, vier sind implementiert aber deaktiviert (mehr dazu unten). Alle Gewichte, Auswertungen und konkrete Wünsche könnten immer so angepasst werden, wir ihr das möchtet.
+Ich hab einen Sourcing-Agent gebaut, der pre-seed / seed Digital-Tech Startups hauptsächlich im DACH Raum findet (vorerst, ist jederzeit anpassbar auf die ganze Welt). Drei Datenquellen sind live, vier sind implementiert aber deaktiviert (mehr dazu unten). Alle Gewichte, Auswertungen und konkrete Wünsche könnten immer so angepasst werden, wir ihr das möchtet. Sicherlich weißt der aktuelle Prototyp noch ein paar kleine Makel auf, aber diese könnten mit ein wenig mehr Zeit ausgebessert werden.
 
 **Ergebnis im Repo:** 46 angereicherte Startups, gerankt nach HTGF Fit, plus 46 deutsche One-Pager. Der ganze Pipeline-Lauf hat 3,07 $ gekostet.
 
