@@ -1,237 +1,173 @@
-# HTGF Early-Stage Sourcing Tool
+# Hey Nico,
 
-An AI-native pipeline that surfaces **pre-seed / seed Digital Tech startups in DACH** before they appear on Crunchbase or Dealroom. It pulls leads from five early-signal sources, enriches each with website + LLM extraction, scores them against HTGF's published thesis, and produces a ranked CSV, a German one-pager per startup, and a live Google Sheet.
+danke für die Case Study, hat richtig Spaß gemacht, und ich hoffe das Ergebnis gefällt dir. Hier ist die Anleitung, wie du alles zum Laufen bekommst, plus ein bisschen Kontext zur Vorgehensweise. Fall etwas nicht klappen sollte, schreib mir doch gerne nochmal eine E-Mail. 
 
-**Why this works:** Crunchbase, Dealroom and PitchBook are reactive — they list a startup after a round is announced. The signals that surface *intent to build* or *early traction* before any round closes (EXIST grants, university TTOs, GitHub orgs with DACH footprint, Show HN, Beta List) are public but rarely fused systematically by a single VC. This tool fuses them.
+## TL;DR
+
+Ich hab einen Sourcing-Agent gebaut, der pre-seed / seed Digital-Tech Startups in DACH findet (vorerst, ist jederzeit anpassbar auf die ganze Welt). Drei Datenquellen sind live, vier sind verkabelt aber deaktiviert (mehr dazu unten).
+
+**Ergebnis im Repo:** 46 angereicherte Startups, gerankt nach HTGF-Thesis-Fit, plus 46 deutsche One-Pager. Der ganze Pipeline-Lauf hat 3,07 $ gekostet.
 
 ---
 
-## TL;DR for the reviewer
+## Wie du das ausprobierst
 
-1. Open **`outputs/leads.xlsx`** — ranked list, frozen header, one row per startup.
-2. Read **`outputs/run_summary.md`** — counts, cost, top-5 with links.
-3. Open 2–3 files in **`outputs/onepagers/`** — German one-pagers with rationale, founders, sources.
-4. (Optional) Open the linked Google Sheet — same data, dated tab per run.
+Du brauchst nur `uv` installiert (quasi `pip` und `venv`)
 
-To regenerate the outputs from the committed cache without any API key:
+```bash
+brew install uv                                    # Mac
+curl -LsSf https://astral.sh/uv/install.sh | sh    # Linux / WSL
+```
+
+Den Rest macht das Repo.
+
+### Variante 1 — nur anschauen (empfohlen, dauert 30 Sekunden)
 
 ```bash
 uv sync
 uv run sourcer export
 ```
 
-That is the cache-replay path. No network. No spend.
+Kein API-Key. Kein Netzwerk. 0 $. Das regeneriert die Outputs aus dem Cache, der im Repo liegt. Dann öffne in dieser Reihenfolge:
 
----
+1. **`outputs/run_summary.md`** — Statistik vom Run plus Top-5 mit direkten Links
+2. **`outputs/leads.xlsx`** — die zentrale Tabelle (frozen header, sortierbar)
+3. Ein, zwei One-Pager aus **`outputs/onepagers/`** — pro Startup ein deutsches Briefing
 
-## How it works
+### Variante 2 — Pipeline frisch laufen lassen
 
-Three idempotent stages, each producing inspectable artifacts:
-
-```
-                    ┌─────────────────────────────────────────────┐
-                    │            STATE (SQLite + cache/)           │
-                    │   leads, enrichments, scores, raw_pages      │
-                    └─────────────▲───────────────────────────────┘
-                                  │
-   ┌──────────────┐        ┌──────┴──────┐        ┌─────────────────┐
-   │   DISCOVER   │ ─────▶ │   ENRICH    │ ─────▶ │  SCORE & EXPORT │
-   │ (collectors) │        │ (fetch+LLM) │        │  (rank, write)  │
-   └──────────────┘        └─────────────┘        └─────────────────┘
-```
-
-- **Discover** runs every enabled collector and persists `RawLead` rows.
-- **Enrich** picks pending leads (no enriched row, or stale > 14 days), fetches the landing page + a small set of about / team paths in parallel, then asks Claude Sonnet 4.6 to extract a structured `EnrichedStartup` via Anthropic tool-use. Same-domain duplicates merge their `sources` list.
-- **Score** prompts Sonnet 4.6 with HTGF's thesis + five real anchor portfolio companies, gets 1–5 scores on five dimensions, computes the weighted `overall`, and writes a `Score` row.
-- **Dedup** (optional) runs a Haiku pairwise check on websiteless leads (EXIST entries, early university spin-outs) against existing enriched startups using a fuzzy-name shortlist to keep LLM cost low.
-- **Export** joins everything, ranks by `overall`, and writes CSV + XLSX + per-startup Markdown + run summary, then optionally pushes to Google Sheets.
-
-Every fetch and every LLM call is **cached on disk** (`cache/state.db`, `cache/pages/`). Re-running any stage hits the cache. That's what lets the reviewer replay the pipeline for free.
-
----
-
-## Sources used and why
-
-| Source | Status | What it gives us | Why it's early-signal |
-|---|---|---|---|
-| **Hacker News (Show HN)** | **enabled** | Founder-posted launches in last 90 days | Strong intent signal; founders self-identify. Haiku pre-filter for DACH B2B / dev-tool. |
-| **GitHub** | **enabled** | DACH-located developers' recent public repos | "Building in public" signal — code often exists before a funding round. Searches users by `location:Germany / Austria / Switzerland / Berlin / Munich / Vienna / Zurich`, then lists their non-fork repos. |
-| **Product Hunt** | **enabled** | Recent launches with ≥10 upvotes in last 90 days | Pre- or just-post-launch signal. **No DACH pre-filter** — the v2 API hides external website URLs behind a JS-only redirect, so we collect globally and rely on the HTGF scoring prompt to penalize non-DACH startups via `thesis_fit`. Lead `website` points at the PH product page (`/products/SLUG`) so enrichment can extract real content. |
-| EXIST grants | wired, disabled by default | Federal grants for academic founders, listed publicly | Funded *before* incorporation; lightly tracked by VCs. **Live page drifted** — actual project rows moved off the index page. Re-enable once a per-program crawler is written. |
-| University TTOs (TUM, RWTH, KIT, TU Berlin, Fraunhofer) | wired, disabled by default | Spin-out announcements from tech-transfer offices | Same drift problem: TUM and RWTH URLs currently 404, and the surviving TTO pages mostly describe programs, not specific spin-outs. |
-| Beta List | wired, disabled by default | Pre-launch "upcoming" products | The `/markets/germany` page is a category index ("AI", "Commerce"), not a list of startups. Needs a different ingestion path. |
-| Handelsregister | stub (deferred) | Newly-registered GmbHs | OffeneRegister "purpose" field is too sparse for v1; revisit with Northdata in v2. |
-
-Disabled sources are wired in code (`src/htgf_sourcer/sources/*.py`) and tested — toggle in `config/sources.yaml` to experiment. The decision to disable them by default is documented inline in that file.
-
----
-
-## AI-native choices
-
-- **Jina Reader → Firecrawl → Playwright** for fetching. Jina returns clean markdown for ~80% of URLs at zero cost. Firecrawl is the paid fallback. Playwright is the last-resort Cloudflare bypass. **Zero per-site CSS selectors anywhere in the codebase.**
-- **Claude Sonnet 4.6 with Pydantic-driven tool-use** for extraction (`EnrichedStartup`) and scoring (`ExtractedScore`). The JSON tool schema is `model.model_json_schema()` — change a Pydantic field, the LLM contract follows.
-- **Claude Haiku 4.5** for cheap pairwise dedup (`judge_match`) and the Hacker News pre-filter (`classify_post`).
-- **HTGF anchors baked into the scoring prompt** — five real portfolio companies (Zeeg, Stackgini, Pactos, syte, Data Virtuality) plus four explicit negative anchors. Bias toward HTGF's actual investment style rather than generic "B2B SaaS".
-- **Every LLM call is request-hashed and cached.** Re-runs are deterministic and free. Prompt-iteration changes the hash → fresh call → caches the new response. This is why the reviewer can replay the whole pipeline without an API key.
-
----
-
-## Setup
-
-Requirements: macOS or Linux, [`uv`](https://docs.astral.sh/uv/), Python 3.11+. No Conda, no virtualenv to manage by hand — `uv` does both.
+Wenn du sehen willst, was *heute* gefunden wird:
 
 ```bash
-# Install uv if you don't have it
-brew install uv               # macOS
-# or: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install project deps + dev extras (creates .venv/ for you)
-uv sync --extra dev
-
-# Copy the env template and fill in your keys
-cp .env.example .env
-# At minimum, set:
-#   ANTHROPIC_API_KEY=sk-ant-...
-# Recommended (sources degrade gracefully without them):
-#   GITHUB_TOKEN=...
-#   PRODUCT_HUNT_TOKEN=...
-#   FIRECRAWL_API_KEY=...
-# Optional (Google Sheets export; skip with --no-sheets):
-#   GOOGLE_SA_PATH=~/.config/htgf-sourcer/sa.json
-#   GOOGLE_SHEET_ID=...
-
-# (Optional) install the Chromium binary if you want the Playwright fallback
-uv run playwright install chromium
-
-# Sanity-check the environment
-uv run sourcer doctor
+cp .env.example .env       # mindestens ANTHROPIC_API_KEY rein
+uv run sourcer run-all --max-spend 5
 ```
 
-`doctor` prints a table of pass / warn / fail checks. If `ANTHROPIC_API_KEY` is missing it exits non-zero; the rest are recommendations.
+`--max-spend 5` ist eine harte Obergrenze für den Run — falls irgendwas durchdreht, wird sauber bei 5 $ abgebrochen. Der Original-Run hat ~3 $ gekostet, also bequemer Puffer.
+
+Die anderen API-Keys (GitHub, Product Hunt, Firecrawl) sind nice-to-have. Ohne sie laufen die jeweiligen Collectors degraded, aber nicht gar nicht.
+
+### API-Key-Situation
+
+Den Anthropic-Key direkt ins Repo zu committen hätte mir Schweißausbrüche bereitet. Am leichtesten ist es wenn:
+
+1. **HTGF hat eh einen** → einfach den nehmen
+2. **Du willst meinen** → 
 
 ---
 
-## Usage
+## Architektur in einem Bild
 
-```bash
-sourcer discover [--source X] [--limit N]    # run one or all enabled collectors
-sourcer enrich [--limit N]                   # fetch + LLM extract pending leads
-sourcer dedup [--limit N]                    # Haiku pairwise match websiteless leads
-sourcer score [--limit N]                    # score enriched startups against HTGF thesis
-sourcer export [--top-n N]                   # write CSV / XLSX / one-pagers / Sheets
-sourcer run-all [--discover-limit N] [--enrich-limit N] [--score-limit N] [--skip-dedup]
-sourcer status                                # leads / enriched / scored counts + LLM cost
-sourcer doctor                                # env + tool checks
+Drei Stages, jede idempotent, jede über SQLite gestated:
+
+```
+DISCOVER  →  ENRICH  →  SCORE & EXPORT
 ```
 
-Global flags (these go **before** the subcommand name — Typer convention):
-
-- `--max-spend USD` — hard cap on cumulative LLM cost (default 20). Aborts mid-run with a clean message if exceeded.
-- `--no-sheets` — skip the Google Sheets push.
-- `--dry-run`, `--config`, `--verbose` — reserved.
-
-Typical first run (cold cache, ~15 leads per source, ~$3–6, ~15 min):
-
-```bash
-uv run sourcer --max-spend 8 run-all --discover-limit 15 --enrich-limit 20 --score-limit 20
-```
-
-Once the cache is warm, the same command re-executes in seconds at ~$0.
-
-To run a single collector (useful for incremental top-ups or debugging):
-
-```bash
-uv run sourcer discover --source exist --limit 5
-uv run sourcer discover --source universities --limit 5
-# ... known sources: hackernews, exist, universities, github, producthunt, betalist
-```
-
-Running `discover` with no `--source` runs every collector enabled in `config/sources.yaml`.
+Im Folgenden was hinter jedem Pfeil passiert.
 
 ---
 
-## Project structure
+## Was konkret passiert, Schritt für Schritt
 
-```
-htgf-sourcer/
-├── PLAN.md                          # full design (the source of truth)
-├── CLAUDE.md                        # working map for AI co-authors
-├── README.md                        # this file
-├── pyproject.toml                   # uv-managed
-├── .env.example                     # API-key placeholders (real .env is gitignored)
-├── config/
-│   ├── htgf_thesis.yaml             # score weights + anchors
-│   ├── universities.yaml            # TTO URLs
-│   └── sources.yaml                 # which sources are enabled
-├── prompts/
-│   ├── extract_startup.txt          # Sonnet extraction prompt
-│   ├── extract_listing.txt          # Sonnet listing-page extraction
-│   ├── score_startup.txt            # Sonnet scoring prompt (anchors baked in)
-│   ├── hn_filter.txt                # Haiku HN filter
-│   └── dedup_check.txt              # Haiku pairwise dedup
-├── src/htgf_sourcer/
-│   ├── cli.py                       # Typer entrypoint
-│   ├── models.py                    # Pydantic: RawLead, EnrichedStartup, Score, ...
-│   ├── db.py                        # SQLite schema + helpers
-│   ├── fetch.py                     # Jina → Firecrawl → Playwright chain
-│   ├── llm.py                       # cached_call + cost tracking + --max-spend
-│   ├── enrich.py                    # enrichment pipeline
-│   ├── dedup.py                     # two-stage dedup
-│   ├── score.py                     # LLM scoring
-│   ├── export.py                    # row assembly + run summary
-│   ├── sources/                     # one module per collector
-│   └── exporters/                   # csv_writer, markdown_onepager, google_sheets
-├── cache/                           # COMMITTED — state.db + per-URL markdown + LLM cache
-├── outputs/                         # COMMITTED — leads.csv/xlsx, onepagers/, run_summary.md
-└── tests/                           # pytest, mocked HTTP + LLM; 77 tests, ~1 sec
-```
+In einfachen Worten der Ablauf, vom Befehl bis zur fertigen Liste:
 
----
+### 1. Drei Quellen anzapfen
 
-## How the reviewer can re-run
+Das Tool holt sich Leads parallel aus drei APIs. Jede Quelle hat einen eigenen Filter, der schon vor dem teuren LLM-Schritt aussortiert was offensichtlich nicht passt:
 
-The cache is committed. No API keys needed:
+**Hacker News** — alle "Show HN" Posts der letzten 90 Tage über die Algolia-API. Das sind etwa 300 Stück. Damit nicht jeder einzeln teuer durch Sonnet läuft, geht erst ein billiger **Claude Haiku** als Vorfilter drüber mit der Frage: *"Ist das ein DACH-basiertes B2B-SaaS, Dev-Tool oder AI-Produkt?"* — Antwort Ja oder Unsicher landet in der DB, Nein wird verworfen. **Ergebnis: 26 Leads.** -> Hier kann man natürlich filtern wie wir wollen am Ende
 
-```bash
-git clone <repo>
-cd htgf-sourcer
-uv sync
-uv run sourcer export       # regenerates outputs/ from the cached DB
-```
+**Product Hunt** — alle Launches der letzten 90 Tage mit mindestens 10 Upvotes über die GraphQL-API. Hier kein Geo-Filter beim Discover, weil PH keine zuverlässigen Standort-Infos zu Makern liefert. Globalen Pool sammeln, der Scoring-Prompt am Ende sortiert dann nicht-DACH-Firmen über die `thesis_fit`-Dimension nach unten. **Ergebnis: 15 Leads.**
 
-To re-execute the full pipeline (still ~free because of the LLM cache):
+**GitHub** — Suche nach Usern mit Location-Tag *"Germany / Berlin / Munich / Austria / Vienna / Switzerland / Zurich"*, dann deren neueste original Repos (keine Forks, mindestens 10 Stars). Mein erster Plan — Repos suchen und nach `.de`-Homepage filtern — hat 0 echte DACH-Startups gefunden, weil die alle `.com` / `.ai` / `.io` für internationale Märkte nutzen. Der Pivot zur User-Suche steht im Commit-Log. **Ergebnis: 5 Leads.** -> Auch hier kann alles angepasst werden, also Weltweite Suche etc.
 
-```bash
-cp .env.example .env        # set ANTHROPIC_API_KEY if you want to *extend* the dataset
-uv run sourcer run-all --max-spend 20
-```
+Macht **46 unique Leads** insgesamt (nach Dedup über die normalisierte Domain).
 
-The second run picks up where the first left off (incremental discover, skip-fresh enrichment) and the cache makes any work that was already done free.
+### 2. Alles in einer SQLite-Datenbank speichern
 
----
+Jeder Lead landet als Zeile in `cache/state.db`, gehashed über die normalisierte Domain (lower-case, kein `www.`, kein trailing slash, keine `utm_*` Parameter). Wenn die gleiche Firma in zwei Quellen auftaucht — z.B. einmal in HN und einmal in PH — werden die Einträge transparent zusammengeführt. Im finalen Output siehst du dann unter der `sources`-Spalte alle Quellen, in denen sie aufgetaucht ist. **Multi-Source-Coverage ist selbst ein positives Signal** — was an mehreren Stellen Spuren hinterlässt, ist meistens relevanter.
 
-## Limitations & GDPR notes
+### 3. Jeden Lead anreichern
 
-- **No LinkedIn profile scraping.** ToS + GDPR risk. We only surface LinkedIn URLs that are explicitly linked from a company's own site (e.g. the team page).
-- **Founder emails are not guessed.** The extraction prompt forbids inference. We only include emails that are explicitly printed on the company's Impressum / contact page. Legal basis for processing those: Art. 6(1)(f) (legitimate interest of HTGF in evaluating investment opportunities).
-- **Twitter/X dropped** — API cost prohibitive for this scope.
-- **Handelsregister source** is a stub in v1. OffeneRegister's bulk data is messy and the `purpose` field is sparse, so signal-to-noise is poor. Re-evaluate with Northdata API for a paid v2.
-- **GitHub DACH detection** uses GitHub's user-search with `location:Germany|Austria|Switzerland|Berlin|Munich|Vienna|Zurich`, then lists each user's recent original repos (no forks, no archives, stars ≥ 10). This yields real DACH developer projects. The earlier v1 strategy (search repos, filter by homepage TLD) rejected ~100% of real DACH startups because they use `.com`/`.ai`/`.io`/`.dev` for international markets — see commit history.
-- **Source list is configurable.** Adding a new sector or geography is a config change (`config/htgf_thesis.yaml`, `config/sources.yaml`, `config/universities.yaml`) and a new `Collector` subclass — no schema changes.
-- **Score `overall` is deterministic given the dimension scores.** Weights live in `config/htgf_thesis.yaml` and can be re-tuned without re-prompting the LLM (`sourcer score` is free against the cache).
+Für jeden Lead, der noch nicht angereichert ist (oder älter als 14 Tage):
+
+- Hole die Landing-Page plus typische Subseiten parallel: `/about`, `/team`, `/ueber-uns`, `/about-us`
+- Dafür gibt es eine **Fetch-Kette mit drei Ebenen**: erst **Jina Reader** (kostenlos, liefert sauberes Markdown für ~80% der URLs), dann **Firecrawl** als Fallback (kostet ~$0.005/Seite, aber zuverlässiger bei JS-heavy Sites), dann **Playwright headless** als letzte Bastion (für Cloudflare-geschützte Seiten)
+- Das gesammelte Markdown geht an **Claude Sonnet 4.6** mit einem Pydantic-Schema. Sonnet gibt ein validiertes Objekt zurück mit: Name, One-Liner, Sektor, Stadt + Land, Gründungsjahr, Stage-Signal, Gründer (Name + Rolle + LinkedIn + E-Mail wenn auf der Seite gelistet), Traction-Signale, Funding-Signale
+
+Wichtig zum Datenschutz: Bei E-Mails ist der Prompt strikt — die werden **nur** übernommen wenn sie explizit im Impressum oder auf der Kontaktseite stehen. Nichts wird geraten, nichts aus Namen abgeleitet. Tests prüfen das.
+
+### 4. Bewerten gegen HTGF's Thesis
+
+Jedes angereicherte Startup geht durch einen zweiten Sonnet-Call mit dem Scoring-Prompt. Im Prompt sind **fünf echte HTGF Portfolio-Companies als positive Anker** (Zeeg, Stackgini, Pactos, syte, Data Virtuality) und **vier negative Anker** (Consumer-Apps ohne Enterprise-Angle, Hardware-only, Late-Stage, non-DACH). Damit biased Sonnet nicht zu generischem "B2B SaaS gut" sondern zu eurem tatsächlichen Investmentstil.
+
+Bewertet werden fünf Dimensionen, jede 1–5:
+
+| Dimension | Gewicht | Was reinzählt |
+|---|---:|---|
+| `thesis_fit` | 35 % | B2B SaaS? AI-native? DACH? Passt zum HTGF-Profil? |
+| `earliness` | 25 % | Wie früh sind wir dran? 5 = noch in Stealth, 1 = schon mit Tier-1 Lead |
+| `team_quality` | 20 % | Technische Gründer? Akademische / Exit-Vorgeschichte? Multi-Founder? |
+| `traction` | 15 % | Zahlende Kunden? GitHub-Momentum? Bekannte Partner? |
+| `contactability` | 5 % | LinkedIn / E-Mail überhaupt vorhanden? |
+
+Plus eine deutsche Begründung in 2-3 Sätzen und eine Liste expliziter Red Flags. Der gewichtete `overall` Score ist die Sortier-Reihenfolge im finalen Output. Weights liegen in `config/htgf_thesis.yaml` und sind ohne neuen LLM-Call änderbar — `sourcer score` läuft gegen den Cache.
+
+### 5. Schreiben
+
+Alles wird zusammengeführt, nach `overall` gerankt, und exportiert:
+
+- **`outputs/leads.csv`** und **`.xlsx`** — die zentrale Tabelle, eine Zeile pro Startup, 30 Spalten
+- **`outputs/onepagers/01_*.md`** bis **`46_*.md`** — ein deutsches Briefing pro Startup mit Rationale, Gründern, Quellen
+- **`outputs/run_summary.md`** — Statistik, Top-5, Kosten, Lauf-Zeit
+- ** Google Sheet mit datiertem Tab pro Run (überspring-bar mit `--no-sheets`)
+
+### Caching, damit es nicht jedes Mal kostet
+
+Jede gefetchede Seite und jeder LLM-Call ist Hash-keyed und auf Disk gespeichert (`cache/state.db`, `cache/pages/`). Beim zweiten Run ist alles was sich nicht geändert hat gratis — gleicher Input gibt gleichen Output. Deshalb kannst du die ganze Pipeline ohne API-Key replay: der Cache liegt im Repo.
 
 ---
 
-## Next steps if this becomes a real tool
+## Was AI-native an dem Ganzen ist
 
-- Slack / email notification on new high-scoring leads above a configurable threshold.
-- Daily cron via GitHub Actions, writing to the same SQLite + Sheets.
-- LinkedIn enrichment via Proxycurl (paid, but high signal for the `contactability` dimension).
-- Northdata API for proper Handelsregister depth.
-- Embedding-based dedup at scale (Sentence Transformers + cosine, then Haiku only on the borderline cases).
-- Per-analyst CRM-style "claim" workflow so two analysts don't double-track the same deal.
-- Streamlit / Next.js dashboard reading from the same SQLite for non-CLI analysts.
+1. **Null CSS-Selektoren im ganzen Repo.** Jede Seite läuft durch Jina Reader → Markdown → Claude mit Pydantic-getriebenem Tool-Use. Wenn ihr morgen ein neues TTO dazuwollt, ist das eine YAML-Zeile, kein Refactor.
+2. **HTGF-Anker im Score-Prompt**  Bias zu eurem tatsächlichen Stil statt zu generischem "B2B SaaS gut".
+3. **Pydantic-Schemas → Tool-Use Schemas.** `model.model_json_schema()` füttert Anthropic direkt. Wenn ich morgen ein Feld zur Datenstruktur hinzufüge, weiß der LLM-Vertrag automatisch davon. Kein Drift zwischen Code und Prompt.
 
 ---
 
-*Built as a take-home assignment. Full design rationale in [`PLAN.md`](PLAN.md); architectural decisions and conventions live in [`CLAUDE.md`](CLAUDE.md). 77 tests, all mocked, run in under 2 seconds.*
+## Was nicht funktioniert hat
+
+Vier von sieben Quellen sind implementiert, getestet, aber per Config deaktiviert.
+
+- **EXIST-Liste** ist mittlerweile eine Marketing-Landingpage. Die echten Projekt-Einträge sind in Sub-Seiten pro Förderprogramm gewandert.
+- **TUM- und RWTH-Spin-out-URLs** geben 404. Die noch lebenden TTO-Seiten beschreiben Programme, keine konkreten Ausgründungen.
+- **Beta List** `/markets/germany` ist ein Kategorie-Index ("AI", "Commerce"), keine Startup-Liste.
+- **Handelsregister** über OffeneRegister ist zu sparse — das `purpose` Feld ist bei den meisten Einträgen leer.
+
+Ich hab das bewusst deaktiviert, aus drei Gründen:
+
+- Jede fehlgeschlagene Extraktion verbrennt LLM-Budget für nichts
+- Ein still scheiternder Collector im Run wäre für den nächsten Analysten unklarer als ein expliziter Toggle in `config/sources.yaml`
+- Die richtigen Lösungen sind per-Programm-Crawler bei EXIST und die Northdata-API fürs Handelsregister — beides ist v2-Material, nicht v1-Hackery
+
+Im `config/sources.yaml` ist jede deaktivierte Quelle mit Begründung markiert. Tests laufen über alle sieben, damit der Code nicht verrottet wenn die Quellen wieder erreichbar werden.
+
+---
+
+## Stack
+
+Bewusst lean gehalten: `uv` · Python 3.11 · `httpx` (async) · `selectolax` · Playwright (nur als Fallback) · Anthropic SDK direkt (kein LangChain) · Claude Sonnet 4.6 für Extraktion + Scoring · Claude Haiku 4.5 für HN-Filter und pairwise Dedup · Pydantic v2 mit Tool-Use · SQLite (stdlib) · Typer / Loguru / Rich · pandas + openpyxl · gspread für Sheets · pytest mit 80 Tests, alle mocked, läuft in ~1,2 Sekunden.
+
+Keine Dependency, die nicht arbeitet.
+
+## Wie würde ich weitermachen
+
+- **Daily Cron** über GitHub Actions, Slack-Nachricht ab Score-Schwelle
+- **Per-Programm-Crawler** für EXIST — jedes Förderprogramm hat eine eigene Sub-Seite, da liegt das Gold
+- **Northdata-API** für Handelsregister-Sourcing (kostet, aber findet Stealth-GmbHs mit echten Tech-Purposes)
+- **Proxycurl** für LinkedIn-Anreicherung — würde die `contactability`-Dimension dramatisch besser machen
+- **Embedding-Dedup** ab dem Punkt, wo > 1000 Startups in der DB sind (Haiku pairwise skaliert nicht ewig)
+- **Claim-Workflow** damit nicht zwei Analysten parallel den gleichen Deal anbahnen
+- **Streamlit-Dashboard** über die gleiche SQLite, für Leute die keine CLI mögen :) 

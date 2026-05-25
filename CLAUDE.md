@@ -1,94 +1,103 @@
 # HTGF Sourcer — Working Memory
 
-Source of truth: `PLAN.md` (sections referenced below as §N). This file is the compressed map; consult `PLAN.md` for full specs, prompts, and rationale.
+`PLAN.md` is the **original design intent** (handed over before any code was
+written). This file is the **current ship state** — what actually got built,
+what got disabled, and what diverged from the plan. When generating new docs
+(e.g. a README), prefer this file for "what exists today" and PLAN.md for
+"why the design looks this way."
 
-**Status:** all 7 build steps shipped. 77 mocked tests pass in < 2s. README is the reviewer-facing doc — keep this file as the AI-co-author orientation.
+**Status (2026-05-25):** 80 mocked tests pass in ~1.2s, ruff clean, end-to-end
+pipeline produced 46 enriched + scored startups across 3 enabled sources at a
+total cost of $2.86. Reviewer cache-replay path verified.
 
-## Purpose
+## Ship state vs PLAN.md
 
-AI-native pipeline that surfaces pre-seed / seed Digital Tech startups in **DACH** before they hit Crunchbase / Dealroom. Discovers leads from 5+ early-signal sources, enriches via LLM, scores against HTGF's thesis, and outputs: ranked CSV/XLSX + per-startup one-pager (**German**) + live Google Sheet.
+PLAN.md proposed 7 sources. **3 ship enabled, 4 are disabled-by-default**
+(wired and tested, but live endpoints either drifted or block cheap geography
+filtering). See `config/sources.yaml` for the per-source toggle and inline
+reason.
 
-Edge = **time, not volume**. Fuse signals (EXIST grants, university TTOs, GitHub orgs, Show HN, Product Hunt, Beta List) that no single VC systematically combines.
+| Source | Plan | Ship |
+|---|---|---|
+| Hacker News | DACH B2B/devtool Haiku filter | ✅ as planned |
+| GitHub | Repo-search + `.de/.at/.ch` homepage filter | **Rewritten:** user-search by `location:Germany/Berlin/Munich/Austria/Vienna/Switzerland/Zurich`, then list their non-fork repos. The plan's TLD filter rejected ~100% of real DACH startups (they use `.com/.ai/.io/.dev` for international markets). |
+| Product Hunt | GraphQL + DACH maker/website filter | **Pivoted:** global, no DACH filter (PH v2 API hides external URLs behind a JS redirect; maker locations are null). Lead `website` points at `/products/SLUG` (fetchable) instead of `/r/HASHCODE` (JS redirect). |
+| EXIST grants | AI-native extraction from index page | **Disabled.** Live page drifted into a marketing landing page; project rows moved to per-program sub-pages. |
+| University TTOs | AI-native extraction from spinoff pages | **Disabled.** TUM/RWTH URLs return 404; surviving pages describe programs, not specific spin-outs. |
+| Beta List | AI-native extraction from markets/germany | **Disabled.** `/markets/germany` is a category index ("AI", "Commerce"), not a list of startups. |
+| Handelsregister | OffeneRegister bulk import | Stub (deferred per PLAN.md §6.3 / §15 Step 8 — sparse `purpose` field). |
 
-## Locked Decisions (do not revisit without explicit user sign-off)
+Other notable differences from the plan:
+- `dedup` is a separate CLI command (not auto-run inside `score` or `enrich`).
+- `--max-spend` is enforced inside `llm.cached_call` via a module-level cap
+  (`set_max_spend(usd)`); it raises `BudgetExceeded` after the offending call
+  is cached so the cap-hit response isn't lost. CLI catches it cleanly (exit 3).
+- `ExtractedScore` and `ExtractedStartup` are LLM-extraction-only subset models
+  so the orchestrator owns `canonical_id`, `sources`, `source_urls`,
+  `last_enriched`, and the weighted `overall`.
+
+## Locked Decisions
 
 - **Sector:** Digital Tech (B2B SaaS, AI-native, dev tools). Pluggable via `config/htgf_thesis.yaml`.
-- **Geography:** DACH primary; framework extensible.
+- **Geography:** HTGF thesis = DACH only (hard constraint per PLAN.md §1). But **PH discovery is global** by design — we rely on the scoring prompt to penalize non-DACH startups via `thesis_fit` rather than filter at discover.
 - **Stage:** Pre-seed / seed, company ≤ 3 years old.
-- **Budget cap:** $15–20 per full run. Enforced by `--max-spend`.
-- **LLM:** Anthropic SDK direct, no LangChain. Sonnet 4.6 for extraction/scoring, Haiku 4.5 for dedup/filter.
-- **Fetch chain:** Jina Reader (`r.jina.ai/<url>`, free) → Firecrawl → Playwright. In that order, no exceptions.
-- **AI-native scraping:** No per-site CSS selectors. Markdown → LLM with Pydantic tool-use for extraction.
-- **Outputs:** CSV + XLSX + Markdown one-pagers (German) + Google Sheets tab per run.
-- **Idempotency:** Every stage resumable. `discover` dedups by domain; `enrich` skips records < 14 days fresh; `score` is cheap, always re-runs.
-- **Cache contract:** All LLM calls go through `llm.cached_call` keyed by `sha256(model + prompt + schema)`. Reviewer re-run must be ~free.
-- **Commit policy:** `cache/state.db`, `cache/pages/`, `cache/llm/`, and `outputs/` ARE committed. `.env` and private outputs are gitignored.
-- **Privacy:** No LinkedIn profile scraping (ToS + GDPR). Founder emails only if explicitly on imprint/contact page — prompt forbids guessing.
-- **Handelsregister:** Defer to stub in v1. If poor signal-to-noise, document as limitation.
+- **Budget cap:** Default $20 via `--max-spend`. Enforced live.
+- **LLM:** Anthropic SDK direct, no LangChain. Sonnet 4.6 (`claude-sonnet-4-6`) for extraction + scoring; Haiku 4.5 (`claude-haiku-4-5-20251001`) for HN classifier + pairwise dedup.
+- **Fetch chain:** Jina Reader (free) → Firecrawl (paid fallback) → Playwright (last resort). In that order.
+- **AI-native scraping:** Zero per-site CSS selectors. Markdown → LLM with Pydantic-driven tool-use for extraction.
+- **Outputs:** CSV + XLSX (frozen header, bold row 1, frozen rank column) + Markdown one-pagers in **German** + per-run dated Google Sheets tab.
+- **Idempotency:** `discover` upserts by `(source, source_id)`; `enrich` skips records enriched < 14 days ago; `score` is free against cache (prompt-hashed).
+- **Cache contract:** Every fetch + every LLM call is hashed and cached. `cache/state.db`, `cache/pages/`, `cache/llm/`, and `outputs/` ARE committed so reviewers can replay at $0.
+- **Privacy:** No LinkedIn profile scraping. Founder emails only if explicitly on imprint/contact page — prompt forbids guessing; tests assert.
 
-## Tech Stack (§4)
+## Tech Stack
 
-- **Env:** `uv` + Python 3.11+
-- **HTTP:** `httpx` (async) · **HTML:** `selectolax` · **JS fetch:** `playwright` (chromium, headless, fallback only)
-- **LLM:** `anthropic` SDK · **Schemas:** `pydantic` v2 + tool-use
-- **State:** stdlib `sqlite3` + `sqlmodel` ORM
-- **CLI:** `typer` · **Logging:** `loguru` · **Console:** `rich`
-- **Data:** `pandas` + `openpyxl` · **Sheets:** `gspread` + `google-auth`
-- **Config:** `pyyaml` + `pydantic-settings` · **Retry:** `tenacity`
-- **Test:** `pytest` + `pytest-recording` (VCR fixtures)
-- **Lint:** `ruff` (only)
+`uv` + Python 3.11+ · `httpx` async · `selectolax` (HTML→text) · `playwright` chromium (fallback) · `anthropic` SDK · `pydantic` v2 + tool-use · stdlib `sqlite3` + `sqlmodel` · `typer` · `loguru` · `rich` · `pandas` + `openpyxl` · `gspread` + `google-auth` · `pyyaml` + `pydantic-settings` · `tenacity` · `pytest` + `pytest-recording` · `ruff`.
 
-## File Structure (§3)
+## File Structure
 
 ```
 htgf-sourcer/
-├── pyproject.toml                    # uv-managed (deps list in §4)
-├── .env.example                      # API key placeholders
+├── PLAN.md / CLAUDE.md / README.md
+├── pyproject.toml · .python-version · .env.example · .gitignore
 ├── config/
-│   ├── htgf_thesis.yaml              # anchors, score weights, hard filters
-│   ├── universities.yaml             # TTO URLs (TUM, RWTH, KIT, TUB, Fraunhofer)
-│   └── sources.yaml                  # enabled sources + rate limits
+│   ├── htgf_thesis.yaml      # score weights + anchors (kept in sync with prompt)
+│   ├── universities.yaml     # TTO URLs (collector currently disabled)
+│   └── sources.yaml          # enabled/disabled per source + inline reasons
+├── prompts/
+│   ├── extract_startup.txt   # Sonnet: per-startup landing-page extraction
+│   ├── extract_listing.txt   # Sonnet: listing-page extraction (used by exist/uni/betalist when enabled)
+│   ├── score_startup.txt     # Sonnet: HTGF scoring with anchors
+│   ├── hn_filter.txt         # Haiku: Show HN DACH B2B/devtool classifier
+│   └── dedup_check.txt       # Haiku: pairwise A/B match
 ├── src/htgf_sourcer/
-│   ├── cli.py                        # Typer entry point (§11)
-│   ├── models.py                     # Pydantic (§5)
-│   ├── db.py                         # SQLite schema (§10)
-│   ├── fetch.py                      # Jina → Firecrawl → Playwright chain
-│   ├── llm.py                        # Anthropic wrapper + cached_call
-│   ├── sources/                      # Collector ABC + per-source modules
-│   ├── enrich.py                     # §7
-│   ├── score.py                      # §8
-│   ├── dedup.py                      # §9: domain canon + Haiku pairwise
-│   └── exporters/                    # csv_writer, markdown_onepager, google_sheets
-├── prompts/                          # extract_startup, score_startup, dedup_check
-├── cache/                            # pages/, llm/, state.db — all committed
-├── tests/                            # pytest + fixtures/
-├── outputs/                          # leads.csv/.xlsx, onepagers/, run_summary.md — committed
-└── scripts/scrape_htgf_portfolio.py  # one-off anchor list builder
+│   ├── cli.py                # Typer entry; collector registry; --max-spend
+│   ├── models.py             # RawLead, Founder, EnrichedStartup, ExtractedStartup, Score, ExtractedScore
+│   ├── db.py                 # SQLite schema + helpers
+│   ├── fetch.py              # Jina → Firecrawl → Playwright + cache writeback
+│   ├── llm.py                # cached_call + BudgetExceeded + cost ledger
+│   ├── enrich.py             # pipeline + Stage-1 dedup transparent merge
+│   ├── dedup.py              # Stage-1 + Stage-2 (Haiku pairwise)
+│   ├── score.py              # iterates enriched, computes weighted overall
+│   ├── export.py             # row assembly + run_summary
+│   ├── sources/              # base.py + 7 source modules (hackernews, github, producthunt, exist, universities, betalist, handelsregister) + _ai_listing.py helper
+│   └── exporters/            # csv_writer, markdown_onepager, google_sheets
+├── cache/                    # state.db + pages/ + llm/ — COMMITTED
+├── outputs/                  # leads.csv/.xlsx + onepagers/ + run_summary.md — COMMITTED
+└── tests/                    # 80 mocked tests; ~1.2s; no network
 ```
 
-## Core Data Models (§5)
+## Core Data Models
 
-`RawLead` (collector output) → `EnrichedStartup` (LLM-extracted, canonical) → `Score` (LLM-scored, weighted overall).
+`RawLead` → `EnrichedStartup` → `Score`. Plus extraction-only subsets:
+- `ExtractedStartup` — LLM returns this from `record_startup` tool. Orchestrator adds `canonical_id`, `sources`, `source_urls`, `last_enriched`.
+- `ExtractedScore` — LLM returns 5 dim scores (1–5) + German `rationale` + `red_flags`. Orchestrator computes `overall` from weights and stamps `canonical_id` + `scored_at`.
 
-- `canonical_id` = stable hash of normalized domain (lower, no `www.`, no trailing `/`, no `utm_*`).
-- Score dims (1–5 each): `thesis_fit` · `team_quality` · `earliness` · `traction` · `contactability`. Weights in `config/htgf_thesis.yaml` (default: 0.35 / 0.20 / 0.25 / 0.15 / 0.05).
-- Score `rationale` is **German**. Score weights are config-driven, NOT hardcoded.
+`canonical_id` = sha256 of normalized domain (lower-case host, no `www.`, no trailing `/`, drop `utm_*` params). The whole-URL-equivalence-class hash.
 
-## Sources (§6)
+Score weights live in `config/htgf_thesis.yaml`. Default: thesis_fit 0.35 · team_quality 0.20 · earliness 0.25 · traction 0.15 · contactability 0.05.
 
-| # | Source | Key signal | Notes |
-|---|---|---|---|
-| 1 | EXIST grants | German federal grants, lightly tracked | Whitelist DACH digital-tech keywords (§6.1) |
-| 2 | University TTOs | Spin-out announcements | AI-native: Jina → Sonnet structured extract |
-| 3 | Handelsregister (OffeneRegister) | Newly-registered GmbHs | v1 stub; defer if noisy |
-| 4 | GitHub | Trending repos + new orgs w/ DACH location | Needs `GITHUB_TOKEN`; 5k req/hr |
-| 5 | Hacker News (Algolia) | Show HN last 90d | Haiku filter for DACH B2B/devtool |
-| 6 | Product Hunt (GraphQL) | Recent launches with DACH makers | Needs `PRODUCT_HUNT_TOKEN` |
-| 7 | Beta List | Pre-launch products | Jina → Sonnet extract |
-
-Each implements `Collector` ABC: `async def collect(since) -> list[RawLead]`. Wrap each in try/except — one source failing must not abort the run.
-
-## CLI Surface (§11)
+## CLI Surface
 
 ```
 sourcer discover [--source X] [--limit N]
@@ -101,56 +110,48 @@ sourcer status
 sourcer doctor
 ```
 
-Global flags: `--config` · `--dry-run` · `--no-sheets` · `--max-spend USD` · `--verbose`.
-
-`--max-spend` is enforced inside `llm.cached_call` via module-level `set_max_spend()` and raises `BudgetExceeded` after the offending call's response is cached. CLI commands catch it and exit cleanly (code 3).
-
-## Build Order (§15) — all shipped
-
-1. ✅ Skeleton + models + `db.py` + CLI stubs + working `doctor` + pytest placeholder
-2. ✅ `fetch.py` (Jina/Firecrawl/Playwright) + `llm.py` (`cached_call` + cost tracking) + mocked HTTP tests
-3. ✅ HN end-to-end: `sources/hackernews.py` + `enrich.py`
-4. ✅ Remaining collectors (exist / universities / github / producthunt / betalist) + handelsregister stub
-5. ✅ `score.py` + `dedup.py` (Stage 1 auto-merge in enrich, Stage 2 Haiku pairwise as a CLI command)
-6. ✅ Exporters (CSV / XLSX / German MD one-pagers / Sheets) + run_summary
-7. ✅ `--max-spend` wired end-to-end · README per §14 · CLAUDE.md updated
-8. ⏸ Handelsregister — deferred per §15 Step 8 / §6.3 (poor signal-to-noise without Northdata)
+Global flags (go **before** the subcommand — Typer convention): `--config` · `--dry-run` · `--no-sheets` · `--max-spend USD` · `--verbose`.
 
 ## Conventions
 
-- **Determinism:** Same inputs + same cache = same outputs. Never introduce non-determinism into extraction/scoring without surfacing it.
-- **Cache before compute:** Always check `fetch_cache` / `llm_cache` first. New code that calls Anthropic must go through `llm.cached_call`.
-- **Pydantic everywhere at boundaries:** Collectors emit `RawLead`. Enrichers emit `EnrichedStartup`. Scorers emit `Score`. Use `model_json_schema()` to feed Anthropic tool-use — do not hand-write JSON schemas.
-- **LLM prompts live in `prompts/`**, not inlined in `.py` files. Edit prompts there; load at call site.
-- **German for user-facing copy** in one-pagers and score rationales. Code, logs, comments stay English.
-- **Conservative extraction:** Prompts must instruct "leave null if unsure" and "never guess emails." Tests should assert.
-- **Cost logging per call** in `llm_cache.cost_usd`. `sourcer status` surfaces cost-to-date.
-- **No new dependencies** beyond the §4 list without user sign-off.
-- **Tests are 100% mocked** — `httpx.MockTransport` for HTTP, fake LLM callables for Anthropic. `pytest-recording` is in deps for any future cassette-based tests. Never hit live APIs in CI.
+- **Determinism:** Same inputs + same cache = same outputs.
+- **Cache before compute:** Always check `fetch_cache` / `llm_cache` first. Every Anthropic call goes through `llm.cached_call`.
+- **Pydantic at boundaries:** `model_json_schema()` feeds Anthropic tool-use; do not hand-write JSON schemas.
+- **Prompts live in `prompts/`** — not inlined in `.py`. One-pager template is a Python f-string (output format, not LLM input).
+- **German for user-facing copy** (one-pagers, score rationales). Code/logs/comments stay English.
+- **Conservative extraction:** Prompts instruct "leave null if unsure" and "never guess emails."
+- **Cost logging per call** in `llm_cache.cost_usd`. `sourcer status` aggregates.
+- **No new dependencies** beyond the original §4 list without explicit sign-off.
+- **Tests are 100% mocked** — `httpx.MockTransport` for HTTP, fake LLM callables for Anthropic. `pytest-recording` is in deps but unused so far.
 
-## Definition of Done (§18 — checklist)
+## Definition of Done — verified
 
-- `sourcer doctor` passes on fresh checkout post `uv sync` + `.env`
-- `sourcer run-all --max-spend 20` completes clean
-- `outputs/leads.csv` ≥ 30 rows · `outputs/onepagers/` ≥ 10 German one-pagers
-- ≥ 1 entry from each enabled source in output
-- `outputs/run_summary.md` generated
-- README covers what / why / install / re-run / GDPR / limitations
-- Reviewer can `git clone && uv sync && sourcer export` and get same CSV without API key (cache-replay)
-- No secrets in repo · `.env.example` present
-- Shipped as ZIP **and** GitHub repo
-
-## Risks worth remembering (§16)
-
-- LLM email hallucination → prompt forbids + test asserts presence in source markdown
-- Cloudflare blocks Jina → auto-fallback to Firecrawl → Playwright
-- Reviewer has no Anthropic key → cache replay must be complete
-- Cross-source duplicates are a **feature**: merge `sources[]` and `source_urls[]`, keep the enriched record
+- ✅ `sourcer doctor` passes (all checks green when `.env` is set)
+- ✅ `sourcer run-all` completes; `--max-spend` enforced
+- ✅ `outputs/leads.csv` = 46 rows; `outputs/onepagers/` = 46 German files
+- ✅ ≥ 1 entry per enabled source (HN: 26, PH: 15, GitHub: 5)
+- ✅ `outputs/run_summary.md` generated
+- ✅ README covers what / why / install / re-run / GDPR / limitations
+- ✅ Cache replay path tested
+- ✅ No secrets in repo · `.env.example` present
+- ⏸ ZIP + GitHub repo — user to handle
 
 ## Gotchas learned the hard way
 
-- **Never pass `detect_types=PARSE_DECLTYPES` to `sqlite3.connect`.** Python's legacy `convert_timestamp` adapter can't parse tz-aware ISO strings — explodes on `+00:00` with `ValueError: invalid literal for int(): '18+00'`. We store ISO strings and parse in Python via `datetime.fromisoformat()`, which handles both naive and tz-aware.
-- **`model_copy(update=...)` bypasses validation** — `HttpUrl`-typed fields stay as `str`, then Pydantic warns on serialization. Use `model_validate(model_dump() | {...})` instead.
+- **Never pass `detect_types=PARSE_DECLTYPES` to `sqlite3.connect`.** Python's legacy `convert_timestamp` adapter can't parse tz-aware ISO strings — explodes on `+00:00` with `ValueError: invalid literal for int(): '18+00'`. We store ISO strings and parse via `datetime.fromisoformat()` in `_parse_ts()` helpers.
+- **`model_copy(update=...)` bypasses validation** — `HttpUrl`-typed fields stay as `str`, then Pydantic warns on serialization. Use `EnrichedStartup.model_validate(payload | {...})` instead.
+- **GitHub TLD filter is a trap.** Real DACH startups use `.com/.ai/.io/.dev` for international markets, not `.de`. The plan's "search repos, filter by homepage TLD" approach yielded zero. Pivot: search USERS by `location:Germany|Berlin|Munich|...`, then list their recent repos. That gives real DACH developer projects.
+- **Product Hunt v2 API hides external URLs.** `node.website` is `producthunt.com/r/HASHCODE`, which redirects via JavaScript — httpx can't follow it. Use `node.url` (`/products/SLUG`) as the lead website; that page is fetchable and contains a "Visit Website" link plus product info.
+- **Listing-page sources drift fast.** EXIST's index page is now a marketing landing page; TUM/RWTH/Beta List similar. Disabling beats burning LLM budget on empty extractions. The `_ai_listing.py` helper still works — just point it at pages that actually contain entries.
+
+## Cost ledger (2026-05-25)
+
+Real numbers from the shipped run:
+- HN discover (with Haiku filter): ~$0.05 per 10 posts
+- Enrich (Sonnet, includes parallel landing + about fetch): ~$0.05–0.10 per startup
+- Score (Sonnet against HTGF anchors): ~$0.02 per startup
+- Dedup Stage 2 (Haiku pairwise): ~$0.001 per pair, only invoked on fuzzy-name shortlist
+- Full pipeline at 46 leads: **$2.86 total**
 
 ---
-*Update this file when locked decisions change. PLAN.md is the spec; this is the working map.*
+*Single source of truth for current state. PLAN.md = original intent; this = ship.*

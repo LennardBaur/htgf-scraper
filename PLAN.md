@@ -1,6 +1,6 @@
-# HTGF Early-Stage Sourcing Tool — Build Plan
+# Early-Stage Sourcing Tool — Build Plan
 
-**Goal:** An AI-native pipeline that surfaces pre-seed / seed Digital Tech startups in DACH **before** they appear on Crunchbase or Dealroom, enriches them, scores them against HTGF's thesis, and outputs a ranked CSV + per-startup one-pager (German) + live Google Sheet.
+**Goal:** An AI-native pipeline that surfaces pre-seed / seed Digital Tech startups in DACH **before** they appear on Crunchbase or Dealroom, enriches them, scores them, and outputs a ranked CSV + per-startup one-pager (German) + live Google Sheet.
 
 **Scope (locked):**
 - Sector: Digital Tech (B2B SaaS, AI-native, dev tools) — pipeline is sector-pluggable via config
@@ -13,7 +13,7 @@
 
 ## 0. Strategic Premise
 
-HTGF's edge in this task is **time**, not data volume. Crunchbase, Dealroom, PitchBook are reactive — they list a startup *after* a round is announced. By then 20 other VCs already saw it. The interesting signals are the ones that surface **intent to build** or **early traction** before any round closes:
+Crunchbase, Dealroom, PitchBook are reactive — they list a startup *after* a round is announced. By then 20 other VCs already saw it. The interesting signals are the ones that surface **intent to build** or **early traction** before any round closes:
 
 1. **EXIST grant recipients** — German federal grant for academic founders, publicly announced, lightly tracked.
 2. **University TTO spin-out announcements** — TUM, RWTH, KIT, TU Berlin, Fraunhofer.
@@ -25,7 +25,7 @@ These five sources rarely get fused systematically by a single VC. That's the we
 
 ---
 
-## 1. HTGF Digital Tech Thesis (Reference)
+## 1. Digital Tech Thesis (Reference)
 
 Anchor portfolio companies (use these as positive examples in the scoring prompt):
 
