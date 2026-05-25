@@ -1,0 +1,33 @@
+# Secrets — never commit
+.env
+.env.local
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtualenv / uv
+.venv/
+.python-version.local
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Per §10 cache contract: cache/ and outputs/ ARE committed so the reviewer can
+# re-run from cache without API keys. Do NOT add cache/ or outputs/ here.

@@ -1,0 +1,16 @@
+You are filtering Show HN posts for a German seed-stage VC (HTGF).
+
+Decide whether this post is plausibly about a DACH-based (Germany, Austria,
+Switzerland) B2B SaaS, AI tool, or developer tool. Lean inclusive: when in
+doubt, return "unsure" rather than "no". A post is "yes" if there are clear
+DACH signals (founder location, company HQ, .de/.at/.ch domain, German text)
+AND the product is software for business / developers, not consumer.
+
+Title: {title}
+
+URL: {url}
+
+Content excerpt (may be empty):
+{excerpt}
+
+Return your decision via the `classify_post` tool.

@@ -1,0 +1,46 @@
+# HTGF Digital Tech thesis — score weights and anchors (PLAN.md §1 / §8).
+
+score_weights:
+  thesis_fit:     0.35
+  team_quality:   0.20
+  earliness:      0.25
+  traction:       0.15
+  contactability: 0.05
+
+hard_filters:
+  max_company_age_years: 3
+  allowed_countries: [DE, AT, CH]
+
+# Anchors are baked into prompts/score_startup.txt today. Keep this list in
+# sync if you change the few-shot anchors there.
+anchors:
+  positive:
+    - name: "Zeeg"
+      hq: "Berlin"
+      founded: 2023
+      round: "€1.1M Pre-Seed (Oct 2025)"
+      one_liner: "AI-powered booking CRM, EU data sovereignty"
+    - name: "Stackgini"
+      hq: "DACH"
+      founded: 2023
+      round: "Pre-Seed (Apr 2024, revealed Jul 2025)"
+      one_liner: "AI for IT demand management; DAX40 + Mittelstand customers"
+    - name: "Pactos"
+      hq: "Munich"
+      founded: 2024
+      round: "€2.7M Pre-Seed (Sep 2025)"
+      one_liner: "AI platform for managing external workforces"
+    - name: "syte"
+      hq: "Münster"
+      founded: 2022
+      round: "€5M Seed (Sep 2024)"
+      one_liner: "AI data platform for real estate"
+    - name: "Data Virtuality"
+      hq: "Leipzig"
+      round: "Seed → Exit (acquired by CData)"
+      one_liner: "Data integration platform"
+  negative:
+    - "Pure consumer apps with no enterprise angle"
+    - "Hardware-only without significant software"
+    - "Late-stage (Series A+) companies"
+    - "Non-DACH HQ with no German operations"

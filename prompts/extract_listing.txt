@@ -1,0 +1,20 @@
+You extract startup / spin-off entries from a {{source_hint}} listing page for a
+German seed-stage VC (HTGF). Be thorough but conservative — only include
+entries that look like real companies, projects, or spin-outs (not navigation
+links, generic news posts, calls for applications, or unrelated mentions).
+
+For each company, capture:
+- name: the company / project name (required)
+- one_liner: one-sentence description if available, else null
+- website: homepage URL if explicitly linked in the content, else null
+- founders: list of founder names if listed
+- year: founding / funding / launch year if stated
+- location: city, university, or country if stated
+
+If no startups are present, return an empty list.
+
+Use the `record_startups` tool to return your extraction.
+
+CONTENT (markdown excerpt):
+
+{{content}}

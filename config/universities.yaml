@@ -1,0 +1,14 @@
+# University TTOs scraped for spin-out announcements (§6.2).
+# Add `news_url` alongside `spinoff_url` to scrape press releases too.
+universities:
+  - name: "TU München"
+    spinoff_url: "https://www.unternehmertum.de/themen/startups"
+    news_url: "https://www.tum.de/aktuelles/alle-meldungen"
+  - name: "RWTH Aachen"
+    spinoff_url: "https://www.rwth-innovation.de/de/gruendung/spinoffs"
+  - name: "KIT"
+    spinoff_url: "https://www.kit.edu/kit/innovation.php"
+  - name: "TU Berlin"
+    spinoff_url: "https://www.tu.berlin/forschung/anwendungen-und-transfer/ausgruendungen"
+  - name: "Fraunhofer"
+    spinoff_url: "https://www.fraunhofer-venture.de/de/start-ups/portfolio.html"

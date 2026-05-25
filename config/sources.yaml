@@ -1,0 +1,28 @@
+# Which sources to run when `sourcer discover` is invoked without --source.
+#
+# Disabled-by-default sources are wired in the codebase but currently zero-yield
+# against live endpoints. Re-enable individually for experimentation. Reasons:
+#
+# - exist:        the public Gefoerderte-Projekte page is now a marketing
+#                 landing page; actual project rows have moved to sub-pages.
+#                 Needs a per-program crawler. (PLAN.md §6.1)
+# - universities: TTO URLs drift (TUM, RWTH return 404 as of 2026-05). Listing
+#                 pages mostly describe programs, not specific spin-outs.
+# - betalist:     /markets/germany is a category index ("AI", "Commerce"),
+#                 not a list of startups.
+# - handelsregister: deferred per PLAN.md §6.3 / §15 Step 8.
+#
+# producthunt is enabled but runs WITHOUT a DACH filter — PH's v2 API hides
+# external website URLs behind a JS redirect, so cheap geography filtering is
+# impossible. The HTGF scoring prompt already penalizes non-DACH startups via
+# the `thesis_fit` dimension, so we rely on that downstream filter instead of
+# a discover-stage one.
+
+sources:
+  hackernews:      {enabled: true}
+  github:          {enabled: true}
+  producthunt:     {enabled: true}
+  exist:           {enabled: false}
+  universities:    {enabled: false}
+  betalist:        {enabled: false}
+  handelsregister: {enabled: false}

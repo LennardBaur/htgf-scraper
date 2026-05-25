@@ -1,0 +1,13 @@
+You decide whether two records describe the same startup.
+
+Record A (a raw lead, possibly without a website):
+{{record_a}}
+
+Record B (an enriched startup):
+{{record_b}}
+
+Consider company name, founders, university / institution, sector / one-liner,
+and any other shared identifiers. Two records about the same team / project at
+the same institution are a match even if the names differ slightly.
+
+Return your verdict via the `judge_match` tool.
