@@ -12,16 +12,17 @@ Ich hab einen Sourcing-Agent gebaut, der pre-seed / seed Digital-Tech Startups i
 
 ## Wie du das ausprobierst
 
-Du brauchst nur `uv` installiert (quasi `pip` und `venv`)
+Du brauchst nur `uv` installiert (quasi wie `pip` und `venv`)
 
 ```bash
 brew install uv                                    # Mac
 curl -LsSf https://astral.sh/uv/install.sh | sh    # Linux / WSL
 ```
+Mit Windows kenne ich mich leider nicht extrem gut aus, daher müsste man da schauen.
 
 Den Rest macht das Repo.
 
-### Variante 1 — nur anschauen (empfohlen, dauert 30 Sekunden)
+### Variante 1 — nur anschauen (re-run meines crawls)
 
 ```bash
 uv sync
@@ -49,12 +50,7 @@ Die anderen API-Keys (GitHub, Product Hunt, Firecrawl) sind nice-to-have. Ohne s
 
 ### API-Key-Situation
 
-Den Anthropic-Key direkt ins Repo zu committen hätte mir Schweißausbrüche bereitet. Am leichtesten ist es wenn:
-
-1. **HTGF hat eh einen** → einfach den nehmen
-2. **Du willst meinen** → 
-
----
+Einfach ein .env file erstellen, ich schicke dir einen Yopass link mit allen API keys bzw. dem ganzen file das du rauskopieren kannst und einfügen. 
 
 ## Architektur in einem Bild
 
@@ -69,8 +65,6 @@ Im Folgenden was hinter jedem Pfeil passiert.
 ---
 
 ## Was konkret passiert, Schritt für Schritt
-
-In einfachen Worten der Ablauf, vom Befehl bis zur fertigen Liste:
 
 ### 1. Drei Quellen anzapfen
 
